@@ -7,8 +7,9 @@ output: github_document
 ```{r}
 library(tidyverse)
 library(tidymodels)
+library(lubridate)
 
-news <- read_csv("competition-files/data/news.csv")
+# news <- read_csv("competition-files/data/news.csv")
 ```
 
 ```{r}
@@ -26,6 +27,31 @@ test <- testing(news_split)
 write_csv(train, "competition-files/data/train.csv")
 write_csv(test, "competition-files/data/test.csv")
 ```
+
+# Possible Variables to Include
+
+* Topic
+* SentimentTitle
+* Facebook
+* GooglePlus
+* LinkedIn
+* Month (take from the date)
+* Is the title a question?
+* Does the title have the topic word in it?
+* Within working hours (9-5) or not
+* Maybe combine the popularities or add interactions
+
+```{r}
+train %>%
+  mutate(month = str_extract(PublishDate, "^(.*?)./"),
+         month = str_remove(month, "/"),
+         title_question = ifelse(str_ends(Title, "\\?"), "Yes", "No"),
+         title_topic = ifelse(str_detect(str_to_title(Title), str_to_title(Topic)), "Yes", "No"),
+         working_hours = str_extract(train$PublishDate, "[0-9]*:"),
+         working_hours = as.integer(str_remove(working_hours, ":")),
+         working_hours = ifelse(working_hours < 9 | working_hours > 17, "No", "Yes"))
+```
+
 
 
 
