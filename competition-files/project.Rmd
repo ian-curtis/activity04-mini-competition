@@ -1,0 +1,31 @@
+---
+title: "Mini Competition"
+author: "Ian Curtis", "Nikhil Sharma"
+output: github_document
+---
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+
+news <- read_csv("competition-files/data/news.csv")
+```
+
+```{r}
+# set seed before random split
+set.seed(1113)
+# put 80% of the data into the training set
+news_split <- initial_split(news, prop = 0.80)
+
+# assign the two splits to data frames - with descriptive names
+train <- training(news_split)
+test <- testing(news_split)
+```
+
+```{r}
+write_csv(train, "competition-files/data/train.csv")
+write_csv(test, "competition-files/data/test.csv")
+```
+
+
+
