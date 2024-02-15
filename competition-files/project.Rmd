@@ -7,8 +7,7 @@ output: github_document
 ```{r}
 library(tidyverse)
 library(tidymodels)
-library(lubridate)
-
+library(gvsu215)
 # news <- read_csv("competition-files/data/news.csv")
 ```
 
@@ -28,6 +27,11 @@ write_csv(train, "competition-files/data/train.csv")
 write_csv(test, "competition-files/data/test.csv")
 ```
 
+```{r}
+train <- read_csv("competition-files/data/train.csv")
+```
+
+
 # Possible Variables to Include
 
 * Topic
@@ -40,17 +44,205 @@ write_csv(test, "competition-files/data/test.csv")
 * Does the title have the topic word in it?
 * Within working hours (9-5) or not
 * Maybe combine the popularities or add interactions
+* Year?
 
 ```{r}
-train %>%
+train <- train %>%
   mutate(month = str_extract(PublishDate, "^(.*?)./"),
-         month = str_remove(month, "/"),
+         month = as.integer(str_remove(month, "/")),
          title_question = ifelse(str_ends(Title, "\\?"), "Yes", "No"),
          title_topic = ifelse(str_detect(str_to_title(Title), str_to_title(Topic)), "Yes", "No"),
+         headline_topic = ifelse(str_detect(str_to_title(Headline), str_to_title(Topic)), "Yes", "No"),
          working_hours = str_extract(train$PublishDate, "[0-9]*:"),
          working_hours = as.integer(str_remove(working_hours, ":")),
-         working_hours = ifelse(working_hours < 9 | working_hours > 17, "No", "Yes"))
+         working_hours = ifelse(working_hours < 9 | working_hours > 17, "No", "Yes"),
+         Facebook = ifelse(Facebook == -1, NA, Facebook),
+         GooglePlus = ifelse(GooglePlus == -1, NA, GooglePlus),
+         LinkedIn = ifelse(LinkedIn == -1, NA, LinkedIn),
+         score = rowSums(across(c(Facebook, LinkedIn, GooglePlus))), na.rm = TRUE)
 ```
+
+# Visualizations (EDA)
+
+```{r topic}
+train %>% ggplot(aes(x = Topic)) +
+  geom_bar()
+```
+
+```{r title}
+# approx. normal!
+train %>% ggplot(aes(x = SentimentTitle)) +
+  geom_histogram(binwidth = 0.1)
+
+train %>% ggplot(aes(x = SentimentTitle)) +
+  geom_boxplot()
+
+tbl_num_sum(train, ~SentimentTitle)
+```
+
+```{r headline}
+# approx. normal!
+train %>% ggplot(aes(x = SentimentHeadline)) +
+  geom_histogram(binwidth = 0.1)
+
+train %>% ggplot(aes(x = SentimentHeadline)) +
+  geom_boxplot()
+
+tbl_num_sum(train, ~SentimentHeadline)
+```
+
+
+For all of the three popularity variables, values range from -1 all the way up to multiple thousands. All variables are heavily skewed right. What does -1 mean???
+
+```{r facebook}
+# skewed right by a LOT
+train %>% ggplot(aes(x = log(Facebook))) +
+  geom_histogram(binwidth = 1)
+
+train %>% filter(Facebook > 5000)
+# only 194 greater than 5000
+
+train %>% filter(Facebook < 0)
+# 8683 negative values ... can't use sqrt or log
+
+# train %>% ggplot(aes(x = sqrt(Facebook))) +
+#   geom_histogram(binwidth = 1000)
+tbl_num_sum(train, ~Facebook)
+```
+
+
+```{r googleplus}
+# skewed right by a LOT
+train %>% ggplot(aes(x = log(GooglePlus))) +
+  geom_histogram(binwidth = 1)
+# also skewed right, not as extreme as Facebook
+
+train %>% filter(GooglePlus > 250)
+# only 54 greater than 250
+
+train %>% filter(GooglePlus < 0)
+# 4002 negative values ... can't use sqrt or log
+tbl_num_sum(train, ~GooglePlus)
+```
+
+```{r linkedin}
+# skewed right by a LOT
+train %>% ggplot(aes(x = log(LinkedIn))) +
+  geom_histogram(binwidth = 1)
+# also skewed right, similar to Facebook
+
+train %>% filter(LinkedIn > 1000)
+# only 25 greater than 2000!
+# 111 greater than 1000!
+
+train %>% filter(LinkedIn < 0)
+# 4003 negative values ... can't use sqrt or log
+
+tbl_num_sum(train, ~LinkedIn)
+```
+
+```{r score}
+train %>% 
+  mutate(score = rowSums(across(c(Facebook, LinkedIn, GooglePlus)))) %>% 
+  select(Facebook, GooglePlus, LinkedIn, score) %>% 
+  # filter(score < 0) %>% 
+  ggplot(aes(x = log(score))) +
+  geom_histogram(binwidth = 1)
+
+# still have 6015 observations where there is a negative value
+# maybe we need to do a score variable where the value is "negative" if the score is negative and is the actual score when the score is positive
+```
+
+```{r month}
+train %>% ggplot(aes(x = factor(month))) +
+  geom_bar()
+# not a lot
+
+# NO articles were published in Auguest, September, or October??!! 
+# and not many in July
+train %>% filter(str_starts(PublishDate, "8"))
+
+# From paper abstract:
+# The collected data relates to a period of 8 months, between November 2015 and July 2016
+# Maybe we should do year instead?
+```
+
+```{r title_question}
+train %>% ggplot(aes(x = title_question)) +
+  geom_bar()
+# the vast majority are not questions
+```
+
+```{r title_topic}
+train %>% ggplot(aes(x = title_topic)) +
+  geom_bar()
+# most, but not all have the topic word in their title
+```
+
+```{r headline_topic}
+train %>% ggplot(aes(x = headline_topic)) +
+  geom_bar()
+# most, but not all have the topic word in their title
+```
+
+```{r working_hours}
+train %>% ggplot(aes(x = working_hours)) +
+  geom_bar()
+# question: what time zone is this based in? The time of the place it was published? UTC?
+```
+
+
+
+```{r}
+#fit the mlr model
+lm_spec <- linear_reg() %>%
+  set_mode("regression") %>%
+  set_engine("lm")
+
+# lm_spec
+
+new_train <- train %>% 
+  mutate(log_score = ifelse(score == 0, 0, log(score)),
+         log_fb = ifelse(Facebook == 0, 0, log(Facebook)),
+         log_gp = ifelse(GooglePlus == 0, 0, log(GooglePlus)),
+         log_li = ifelse(LinkedIn == 0, 0, log(LinkedIn))) %>% 
+  na.omit()
+
+mlr_mod <- lm_spec %>% 
+  fit(SentimentHeadline ~ Topic + SentimentTitle + log_score + month + headline_topic, data = new_train)
+
+# mlr_mod2 <- lm_spec %>% 
+#   fit(SentimentHeadline ~ Topic + SentimentTitle + log_score + month + working_hours + headline_topic, data = new_train)
+
+# model output
+tidy(mlr_mod)
+```
+
+```{r}
+infer_reg(new_train, SentimentHeadline ~ SentimentTitle + log_score + headline_topic + title_topic, reduced = "no")
+```
+
+
+```{r}
+train_aug <- augment(mlr_mod, new_data = new_train)
+train_aug
+
+ggplot(data = train_aug, aes(x = .pred, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  xlab("Fitted values") +
+  ylab("Residuals")
+```
+
+
+
+
+
+
+
+
+
+
 
 
 
